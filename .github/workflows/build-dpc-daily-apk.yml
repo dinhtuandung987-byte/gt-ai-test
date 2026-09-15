@@ -21,62 +21,103 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract Android source
-        run: |
-          rm -rf android-build
-          mkdir -p android-build
-          unzip -o dpc-daily-android/DPC_Daily_Assistant_V3_Android_Source.zip -d android-build
-          echo "===== Android source ====="
-          find android-build -maxdepth 4 -type f | sort
-
-      - name: Detect project root
-        id: project
-        shell: bash
-        run: |
-          if [ -f android-build/gradlew ]; then
-            ROOT="android-build"
-          else
-            WRAPPER=$(find android-build -type f -name gradlew | head -n 1)
-            if [ -n "$WRAPPER" ]; then
-              ROOT=$(dirname "$WRAPPER")
-            else
-              SETTINGS=$(find android-build -type f \( -name settings.gradle -o -name settings.gradle.kts \) | head -n 1)
-              if [ -z "$SETTINGS" ]; then
-                echo "Không tìm thấy Android Gradle project trong ZIP."
-                exit 1
-              fi
-              ROOT=$(dirname "$SETTINGS")
-            fi
-          fi
-          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
-          echo "Project root: $ROOT"
-
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Extract Android source
+        shell: bash
+        run: |
+          rm -rf android-build
+          mkdir -p android-build
+
+          ZIP=$(find dpc-daily-android -maxdepth 1 -type f -name '*.zip' | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "Khong tim thay file ZIP Android"
+            exit 1
+          fi
+
+          echo "Using ZIP: $ZIP"
+          unzip -q "$ZIP" -d android-build
+
+          echo "===== Extracted files ====="
+          find android-build -maxdepth 6 -type f | sort
+
+      - name: Find Android project
+        id: project
+        shell: bash
+        run: |
+          SETTINGS=$(find android-build -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "Khong tim thay Android Gradle project"
+            exit 1
+          fi
+
+          ROOT=$(dirname "$SETTINGS")
+
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+          echo "Android project root: $ROOT"
+
+      - name: Fix Android XML
+        shell: bash
+        run: |
+          ROOT="${{ steps.project.outputs.root }}"
+          XML="$ROOT/app/src/main/res/layout/activity_main.xml"
+
+          if [ ! -f "$XML" ]; then
+            echo "Khong tim thay activity_main.xml"
+            exit 1
+          fi
+
+          echo "===== XML before fix ====="
+          cat "$XML"
+
+          python3 - "$XML" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          text = text.replace(
+              "LƯU CÔNG VIỆC & ĐẶT CẢNH BÁO",
+              "LƯU CÔNG VIỆC &amp; ĐẶT CẢNH BÁO"
+          )
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          echo "===== XML after fix ====="
+          cat "$XML"
 
       - name: Build debug APK
         shell: bash
         run: |
           cd "${{ steps.project.outputs.root }}"
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew assembleDebug --stacktrace
-          else
-            gradle assembleDebug --stacktrace
-          fi
+          gradle assembleDebug --stacktrace
 
       - name: Collect APK
         shell: bash
         run: |
-          mkdir -p apk-output
-          APK=$(find "${{ steps.project.outputs.root }}" -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)
+          APK=$(find "${{ steps.project.outputs.root }}" \
+            -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            | head -n 1)
+
           if [ -z "$APK" ]; then
-            echo "Không tìm thấy APK sau khi build."
+            echo "Khong tim thay APK sau khi build"
             exit 1
           fi
-          cp "$APK" apk-output/DPC_Daily_Assistant_V3.apk
+
+          mkdir -p apk-output
+
+          cp "$APK" \
+            apk-output/DPC_Daily_Assistant_V3.apk
+
+          echo "===== APK created ====="
           ls -lh apk-output/DPC_Daily_Assistant_V3.apk
 
       - name: Upload APK artifact
