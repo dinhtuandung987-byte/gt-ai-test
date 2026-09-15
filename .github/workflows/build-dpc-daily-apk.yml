@@ -46,7 +46,7 @@ jobs:
         id: project
         shell: bash
         run: |
-          SETTINGS=$(find android-build -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) | head -n 1)
+          SETTINGS=$(find android-build -type f -name 'settings.gradle.kts' -o -name 'settings.gradle' | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
             echo "Khong tim thay Android Gradle project"
@@ -57,7 +57,7 @@ jobs:
           echo "root=$ROOT" >> "$GITHUB_OUTPUT"
           echo "Android project root: $ROOT"
 
-      - name: Fix Android source
+      - name: Fix XML and JVM target
         shell: bash
         run: |
           ROOT="${{ steps.project.outputs.root }}"
@@ -71,62 +71,10 @@ jobs:
           xml = Path(sys.argv[1])
           gradle = Path(sys.argv[2])
 
+          # Fix XML ampersand
           text = xml.read_text(encoding="utf-8")
           text = text.replace(
               "LƯU CÔNG VIỆC & ĐẶT CẢNH BÁO",
               "LƯU CÔNG VIỆC &amp; ĐẶT CẢNH BÁO"
           )
-          xml.write_text(text, encoding="utf-8")
-
-          g = gradle.read_text(encoding="utf-8")
-
-          fix = '''android {
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-              kotlinOptions {
-                  jvmTarget = "17"
-              }'''
-
-          if "sourceCompatibility = JavaVersion.VERSION_17" not in g:
-              g = g.replace("android {", fix, 1)
-
-          gradle.write_text(g, encoding="utf-8")
-          PY
-
-          echo "===== app/build.gradle.kts ====="
-          cat "$APP_GRADLE"
-
-      - name: Build debug APK
-        shell: bash
-        run: |
-          cd "${{ steps.project.outputs.root }}"
-          gradle assembleDebug --stacktrace
-
-      - name: Collect APK
-        shell: bash
-        run: |
-          APK=$(find "${{ steps.project.outputs.root }}" \
-            -type f \
-            -path '*/build/outputs/apk/debug/*.apk' \
-            | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "Khong tim thay APK sau khi build"
-            exit 1
-          fi
-
-          mkdir -p apk-output
-          cp "$APK" apk-output/DPC_Daily_Assistant_V3.apk
-
-          echo "===== APK CREATED ====="
-          ls -lh apk-output/DPC_Daily_Assistant_V3.apk
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: DPC_Daily_Assistant_V3_APK
-          path: apk-output/DPC_Daily_Assistant_V3.apk
-          if-no-files-found: error
-          retention-days: 30
+          xml.write_text(text, encoding
