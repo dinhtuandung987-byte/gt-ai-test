@@ -1,0 +1,88 @@
+name: Build DPC Daily Assistant APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'dpc-daily-android/**'
+      - '.github/workflows/build-dpc-daily-apk.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Extract Android source
+        run: |
+          rm -rf android-build
+          mkdir -p android-build
+          unzip -o dpc-daily-android/DPC_Daily_Assistant_V3_Android_Source.zip -d android-build
+          echo "===== Android source ====="
+          find android-build -maxdepth 4 -type f | sort
+
+      - name: Detect project root
+        id: project
+        shell: bash
+        run: |
+          if [ -f android-build/gradlew ]; then
+            ROOT="android-build"
+          else
+            WRAPPER=$(find android-build -type f -name gradlew | head -n 1)
+            if [ -n "$WRAPPER" ]; then
+              ROOT=$(dirname "$WRAPPER")
+            else
+              SETTINGS=$(find android-build -type f \( -name settings.gradle -o -name settings.gradle.kts \) | head -n 1)
+              if [ -z "$SETTINGS" ]; then
+                echo "Không tìm thấy Android Gradle project trong ZIP."
+                exit 1
+              fi
+              ROOT=$(dirname "$SETTINGS")
+            fi
+          fi
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+          echo "Project root: $ROOT"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          cd "${{ steps.project.outputs.root }}"
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          mkdir -p apk-output
+          APK=$(find "${{ steps.project.outputs.root }}" -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "Không tìm thấy APK sau khi build."
+            exit 1
+          fi
+          cp "$APK" apk-output/DPC_Daily_Assistant_V3.apk
+          ls -lh apk-output/DPC_Daily_Assistant_V3.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DPC_Daily_Assistant_V3_APK
+          path: apk-output/DPC_Daily_Assistant_V3.apk
+          if-no-files-found: error
+          retention-days: 30
