@@ -27,54 +27,86 @@ jobs:
           gradle-version: '8.9'
 
       - name: Extract Android source
-        shell: bash
         run: |
           rm -rf android-build
-          mkdir -p android-build
+          mkdir android-build
+          unzip -q dpc-daily-android/DPC_Daily_Assistant_V3_Android_Source.zip -d android-build
+          ls -la android-build
 
-          ZIP=$(find dpc-daily-android -maxdepth 1 -type f -name '*.zip' | head -n 1)
-
-          if [ -z "$ZIP" ]; then
-            echo "Khong tim thay file ZIP Android"
-            exit 1
-          fi
-
-          echo "Using ZIP: $ZIP"
-          unzip -q "$ZIP" -d android-build
-
-      - name: Find Android project
-        id: project
-        shell: bash
+      - name: Fix Android source
         run: |
-          SETTINGS=$(find android-build -type f -name 'settings.gradle.kts' -o -name 'settings.gradle' | head -n 1)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "Khong tim thay Android Gradle project"
-            exit 1
-          fi
-
-          ROOT=$(dirname "$SETTINGS")
-          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
-          echo "Android project root: $ROOT"
-
-      - name: Fix XML and JVM target
-        shell: bash
-        run: |
-          ROOT="${{ steps.project.outputs.root }}"
-          XML="$ROOT/app/src/main/res/layout/activity_main.xml"
-          APP_GRADLE="$ROOT/app/build.gradle.kts"
-
-          python3 - "$XML" "$APP_GRADLE" <<'PY'
-          import sys
+          python3 <<'PY'
           from pathlib import Path
+          import re
 
-          xml = Path(sys.argv[1])
-          gradle = Path(sys.argv[2])
+          root = Path("android-build")
+          xml = root / "app/src/main/res/layout/activity_main.xml"
 
-          # Fix XML ampersand
-          text = xml.read_text(encoding="utf-8")
-          text = text.replace(
-              "LƯU CÔNG VIỆC & ĐẶT CẢNH BÁO",
-              "LƯU CÔNG VIỆC &amp; ĐẶT CẢNH BÁO"
-          )
-          xml.write_text(text, encoding
+          if not xml.exists():
+              raise SystemExit("activity_main.xml not found")
+
+          s = xml.read_text(encoding="utf-8")
+
+          # Fix unescaped ampersands
+          s = re.sub(r'&(?!amp;|lt;|gt;|quot;|apos;|#)', '&amp;', s)
+
+          # Add required layout dimensions to TextView tags if missing
+          def fix_textview(match):
+              tag = match.group(0)
+              if "android:layout_width=" not in tag:
+                  tag = tag.replace(
+                      "<TextView",
+                      '<TextView android:layout_width="wrap_content"',
+                      1
+                  )
+              if "android:layout_height=" not in tag:
+                  tag = tag.replace(
+                      "<TextView",
+                      '<TextView android:layout_height="wrap_content"',
+                      1
+                  )
+              return tag
+
+          s = re.sub(r'<TextView\b[^>]*?/>', fix_textview, s, flags=re.S)
+
+          xml.write_text(s, encoding="utf-8")
+
+          gradle = root / "app/build.gradle.kts"
+          g = gradle.read_text(encoding="utf-8")
+
+          if "compileOptions" not in g:
+              pos = g.rfind("}")
+              block = '''
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              '''
+              g = g[:pos] + block + g[pos:]
+              gradle.write_text(g, encoding="utf-8")
+
+          print("Android source fixed")
+          PY
+
+      - name: Build debug APK
+        run: |
+          cd android-build
+          gradle assembleDebug --stacktrace
+
+      - name: Collect APK
+        run: |
+          mkdir -p apk-output
+          cp android-build/app/build/outputs/apk/debug/app-debug.apk \
+             apk-output/DPC_Daily_Assistant_V3.apk
+          ls -lh apk-output/DPC_Daily_Assistant_V3.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DPC_Daily_Assistant_V3_APK
+          path: apk-output/DPC_Daily_Assistant_V3.apk
+          retention-days: 30
