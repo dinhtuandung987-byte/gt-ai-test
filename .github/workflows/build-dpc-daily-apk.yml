@@ -30,7 +30,7 @@ jobs:
         run: |
           rm -rf android-build
           mkdir android-build
-          unzip -q dpc-daily-android/DPC_Daily_Assistant_V3_3_Android_Source.zip -d android-build
+          unzip -q dpc-daily-android/DPC_Daily_Assistant_V3_4_Android_Source.zip -d android-build
           ls -la android-build
 
       - name: Fix Android source
