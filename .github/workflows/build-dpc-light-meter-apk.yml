@@ -49,4 +49,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DPC_Light_Meter_V1_
+          name: DPC_Light_Meter_V1_1_APK
+          path: apk-output/DPC_Light_Meter_V1_1.apk
+          retention-days: 30
