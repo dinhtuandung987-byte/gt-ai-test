@@ -29,31 +29,16 @@ jobs:
       - name: Extract Light Meter source
         run: |
           rm -rf light-meter-build
-          mkdir -p light-meter-build
+          mkdir light-meter-build
           unzip -q DPC_Light_Meter_V1_Android_Source.zip -d light-meter-build
+          ls -la light-meter-build/LightMeter
 
-      - name: Fix AndroidX AppCompat dependency
+      - name: Enable AndroidX
         run: |
           cd light-meter-build/LightMeter
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("app/build.gradle.kts")
-          s = p.read_text()
-
-          if "androidx.appcompat:appcompat" not in s:
-              if "dependencies {" in s:
-                  s = s.replace(
-                      "dependencies {",
-                      'dependencies {\n    implementation("androidx.appcompat:appcompat:1.7.0")',
-                      1
-                  )
-              else:
-                  s += '\n\ndependencies {\n    implementation("androidx.appcompat:appcompat:1.7.0")\n}\n'
-
-          p.write_text(s)
-          print(p.read_text())
-          PY
+          echo "android.useAndroidX=true" >> gradle.properties
+          echo "android.enableJetifier=true" >> gradle.properties
+          cat gradle.properties
 
       - name: Build APK
         run: |
@@ -63,8 +48,9 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p apk-output
-          cp light-meter-build/LightMeter/app/build/outputs/apk/debug/app-debug.apk apk-output/DPC_Light_Meter_V1.apk
-          ls -lh apk-output/
+          cp light-meter-build/LightMeter/app/build/outputs/apk/debug/app-debug.apk \
+             apk-output/DPC_Light_Meter_V1.apk
+          ls -lh apk-output/DPC_Light_Meter_V1.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
