@@ -1,10 +1,10 @@
-name: Build DPC Light Meter APK
+name: Build DPC Light Meter V1.1 APK
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'DPC_Light_Meter_V1_Android_Source.zip'
+      - 'DPC_Light_Meter_V1_1_Android_Source.zip'
       - '.github/workflows/build-dpc-light-meter-apk.yml'
 
 jobs:
@@ -26,44 +26,12 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Extract source
+      - name: Extract V1.1 source
         run: |
           rm -rf light-meter-build
           mkdir -p light-meter-build
-          FILE=$(find . -maxdepth 1 -name '*Light_Meter*Source.zip' -print -quit)
-          echo "Source: $FILE"
-          test -n "$FILE"
-          unzip -q "$FILE" -d light-meter-build
-
-      - name: Fix AndroidX and AppCompat
-        run: |
-          cd light-meter-build/LightMeter
-
-          touch gradle.properties
-          grep -q '^android.useAndroidX=true' gradle.properties || \
-            echo 'android.useAndroidX=true' >> gradle.properties
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("app/build.gradle.kts")
-          s = p.read_text()
-
-          dep = 'implementation("androidx.appcompat:appcompat:1.7.0")'
-
-          if dep not in s:
-              if "dependencies {" in s:
-                  s = s.replace(
-                      "dependencies {",
-                      "dependencies {\n    " + dep,
-                      1
-                  )
-              else:
-                  s += "\n\ndependencies {\n    " + dep + "\n}\n"
-
-          p.write_text(s)
-          print(s)
-          PY
+          unzip -q DPC_Light_Meter_V1_1_Android_Source.zip -d light-meter-build
+          test -d light-meter-build/LightMeter
 
       - name: Build APK
         run: |
@@ -73,15 +41,12 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p apk-output
-          APK=$(find light-meter-build/LightMeter/app/build/outputs/apk \
-            -name 'app-debug.apk' -print -quit)
+          APK=$(find light-meter-build/LightMeter/app/build/outputs/apk -name 'app-debug.apk' -print -quit)
           test -n "$APK"
-          cp "$APK" apk-output/DPC_Light_Meter_V1.apk
-          ls -lh apk-output/DPC_Light_Meter_V1.apk
+          cp "$APK" apk-output/DPC_Light_Meter_V1_1.apk
+          ls -lh apk-output/DPC_Light_Meter_V1_1.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DPC_Light_Meter_V1_APK
-          path: apk-output/DPC_Light_Meter_V1.apk
-          retention-days: 30
+          name: DPC_Light_Meter_V1_
