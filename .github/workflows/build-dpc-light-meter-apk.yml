@@ -1,0 +1,53 @@
+name: Build DPC Light Meter APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'DPC_Light_Meter_V1_Android_Source.zip'
+      - '.github/workflows/build-dpc-light-meter-apk.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Extract Light Meter source
+        run: |
+          rm -rf light-meter-build
+          mkdir light-meter-build
+          unzip -q DPC_Light_Meter_V1_Android_Source.zip -d light-meter-build
+          ls -la light-meter-build
+
+      - name: Build APK
+        run: |
+          cd light-meter-build
+          gradle assembleDebug --stacktrace
+
+      - name: Collect APK
+        run: |
+          mkdir -p apk-output
+          cp light-meter-build/app/build/outputs/apk/debug/app-debug.apk \
+             apk-output/DPC_Light_Meter_V1.apk
+          ls -lh apk-output/DPC_Light_Meter_V1.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DPC_Light_Meter_V1_APK
+          path: apk-output/DPC_Light_Meter_V1.apk
+          retention-days: 30
