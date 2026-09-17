@@ -30,7 +30,7 @@ jobs:
         run: |
           rm -rf android-build
           mkdir android-build
-          unzip -q dpc-daily-android/DPC_Daily_Assistant_V3_8_Android_Source.zip -d android-build
+          unzip -q dpc-daily-android/DPC_Daily_Assistant_V4_0_Android_Source.zip -d android-build
           ls -la android-build
 
       - name: Fix Android source
@@ -102,11 +102,11 @@ jobs:
           mkdir -p apk-output
           cp android-build/app/build/outputs/apk/debug/app-debug.apk \
              apk-output/DPC_Daily_Assistant_V3.apk
-          ls -lh apk-output/DPC_Daily_Assistant_V3.apk
+          ls -lh apk-output/DPC_Daily_Assistant_V4.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DPC_Daily_Assistant_V3_APK
+          name: DPC_Daily_Assistant_V4_APK
           path: apk-output/DPC_Daily_Assistant_V3.apk
           retention-days: 30
