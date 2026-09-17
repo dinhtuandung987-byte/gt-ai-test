@@ -2,7 +2,6 @@ name: Build DPC Daily Assistant V4.1 APK
 
 on:
   workflow_dispatch:
-
   push:
     paths:
       - 'dpc-daily-android/DPC_Daily_Assistant_V4_1_Android_Source.zip'
@@ -13,18 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # ==============================
-      # 1. CHECKOUT
-      # ==============================
-
       - name: Checkout repository
         uses: actions/checkout@v4
-
-
-      # ==============================
-      # 2. JAVA 17
-      # ==============================
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -32,32 +21,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-
-      # ==============================
-      # 3. GRADLE
-      # ==============================
-
       - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-
-      # ==============================
-      # 4. EXTRACT V4.1 SOURCE
-      # ==============================
-
-      - name: Extract DPC Daily Assistant V4.1
+      - name: Extract V4.1 source
         run: |
           set -e
-
           rm -rf android-build
           mkdir -p android-build
 
           SOURCE="dpc-daily-android/DPC_Daily_Assistant_V4_1_Android_Source.zip"
-
-          echo "Checking source:"
-          echo "$SOURCE"
 
           if [ ! -f "$SOURCE" ]; then
             echo "ERROR: V4.1 source ZIP not found"
@@ -65,40 +40,7 @@ jobs:
           fi
 
           unzip -q "$SOURCE" -d android-build
-
-          echo "Source extracted:"
-          ls -la android-build
-
-
-      # ==============================
-      # 5. VERIFY PROJECT
-      # ==============================
-
-      - name: Verify Android project
-        run: |
-          set -e
-
-          if [ ! -f "android-build/settings.gradle.kts" ]; then
-            echo "ERROR: settings.gradle.kts not found"
-            exit 1
-          fi
-
-          if [ ! -f "android-build/app/build.gradle.kts" ]; then
-            echo "ERROR: app/build.gradle.kts not found"
-            exit 1
-          fi
-
-          if [ ! -f "android-build/app/src/main/AndroidManifest.xml" ]; then
-            echo "ERROR: AndroidManifest.xml not found"
-            exit 1
-          fi
-
-          echo "Android V4.1 project verified"
-
-
-      # ==============================
-      # 6. SAFE XML FIX
-      # ==============================
+          echo "V4.1 source extracted successfully"
 
       - name: Validate and fix XML
         run: |
@@ -111,12 +53,11 @@ jobs:
           root = Path("android-build/app/src/main/res")
 
           if not root.exists():
-              raise SystemExit("ERROR: Android resource folder not found")
+              raise SystemExit("Android resource folder not found")
 
           for xml in root.rglob("*.xml"):
               text = xml.read_text(encoding="utf-8")
 
-              # Fix raw ampersands only.
               fixed = re.sub(
                   r'&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9A-Fa-f]+;)',
                   '&amp;',
@@ -127,53 +68,31 @@ jobs:
                   xml.write_text(fixed, encoding="utf-8")
                   print("Fixed:", xml)
 
-          print("XML check completed")
+          print("XML validation completed")
           PY
 
-
-      # ==============================
-      # 7. SHOW VERSION
-      # ==============================
-
-      - name: Check V4.1 configuration
-        run: |
-          echo "===== APP CONFIG ====="
-
-          grep -n "applicationId" \
-            android-build/app/build.gradle.kts || true
-
-          grep -n "versionCode" \
-            android-build/app/build.gradle.kts || true
-
-          grep -n "versionName" \
-            android-build/app/build.gradle.kts || true
-
-          echo "======================"
-
-
-      # ==============================
-      # 8. BUILD APK
-      # ==============================
-
-      - name: Build DPC Daily Assistant V4.1 APK
+      - name: Verify V4.1 project
         run: |
           set -e
 
+          test -f android-build/settings.gradle.kts
+          test -f android-build/app/build.gradle.kts
+          test -f android-build/app/src/main/AndroidManifest.xml
+
+          echo "===== VERSION ====="
+          grep -n "applicationId" android-build/app/build.gradle.kts || true
+          grep -n "versionCode" android-build/app/build.gradle.kts || true
+          grep -n "versionName" android-build/app/build.gradle.kts || true
+
+      - name: Build V4.1 APK
+        run: |
+          set -e
           cd android-build
-
-          gradle assembleDebug \
-            --stacktrace \
-            --no-daemon
-
-
-      # ==============================
-      # 9. LOCATE APK
-      # ==============================
+          gradle assembleDebug --stacktrace --no-daemon
 
       - name: Collect V4.1 APK
         run: |
           set -e
-
           mkdir -p apk-output
 
           APK=$(find android-build/app/build/outputs/apk \
@@ -183,39 +102,31 @@ jobs:
             -quit)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: app-debug.apk not found"
-            echo "Available APK files:"
+            echo "ERROR: APK not found"
             find android-build -type f -name "*.apk" -print || true
             exit 1
           fi
 
-          echo "APK found:"
-          echo "$APK"
-
           cp "$APK" \
             apk-output/DPC_Daily_Assistant_V4_1.apk
 
-          echo "===== FINAL APK ====="
-          ls -lh \
-            apk-output/DPC_Daily_Assistant_V4_1.apk
+          echo "APK READY:"
+          ls -lh apk-output/DPC_Daily_Assistant_V4_1.apk
 
-
-      # ==============================
-      # 10. APK CHECKSUM
-      # ==============================
-
-      - name: Generate APK SHA256
+      - name: Generate SHA256
         run: |
-          set -e
-
           cd apk-output
-
-          sha256sum \
-            DPC_Daily_Assistant_V4_1.apk \
+          sha256sum DPC_Daily_Assistant_V4_1.apk \
             > DPC_Daily_Assistant_V4_1_SHA256.txt
 
           cat DPC_Daily_Assistant_V4_1_SHA256.txt
 
-
-      # ==============================
-      # 11. UPLOAD ARTIF
+      - name: Upload V4.1 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DPC_Daily_Assistant_V4_1_APK
+          path: |
+            apk-output/DPC_Daily_Assistant_V4_1.apk
+            apk-output/DPC_Daily_Assistant_V4_1_SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
