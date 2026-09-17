@@ -1,10 +1,11 @@
-name: Build DPC Daily Assistant V4.0 APK
+name: Build DPC Daily Assistant V4.1 APK
 
 on:
   workflow_dispatch:
+
   push:
     paths:
-      - 'dpc-daily-android/DPC_Daily_Assistant_V4_0_Android_Source.zip'
+      - 'dpc-daily-android/DPC_Daily_Assistant_V4_1_Android_Source.zip'
       - '.github/workflows/build-dpc-daily-apk.yml'
 
 jobs:
@@ -12,8 +13,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # ==============================
+      # 1. CHECKOUT
+      # ==============================
+
       - name: Checkout repository
         uses: actions/checkout@v4
+
+
+      # ==============================
+      # 2. JAVA 17
+      # ==============================
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -21,117 +32,190 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+
+      # ==============================
+      # 3. GRADLE
+      # ==============================
+
       - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extract Android source
+
+      # ==============================
+      # 4. EXTRACT V4.1 SOURCE
+      # ==============================
+
+      - name: Extract DPC Daily Assistant V4.1
         run: |
+          set -e
+
           rm -rf android-build
           mkdir -p android-build
-          unzip -q dpc-daily-android/DPC_Daily_Assistant_V4_0_Android_Source.zip -d android-build
+
+          SOURCE="dpc-daily-android/DPC_Daily_Assistant_V4_1_Android_Source.zip"
+
+          echo "Checking source:"
+          echo "$SOURCE"
+
+          if [ ! -f "$SOURCE" ]; then
+            echo "ERROR: V4.1 source ZIP not found"
+            exit 1
+          fi
+
+          unzip -q "$SOURCE" -d android-build
+
+          echo "Source extracted:"
           ls -la android-build
 
-      - name: Fix Android source
+
+      # ==============================
+      # 5. VERIFY PROJECT
+      # ==============================
+
+      - name: Verify Android project
         run: |
+          set -e
+
+          if [ ! -f "android-build/settings.gradle.kts" ]; then
+            echo "ERROR: settings.gradle.kts not found"
+            exit 1
+          fi
+
+          if [ ! -f "android-build/app/build.gradle.kts" ]; then
+            echo "ERROR: app/build.gradle.kts not found"
+            exit 1
+          fi
+
+          if [ ! -f "android-build/app/src/main/AndroidManifest.xml" ]; then
+            echo "ERROR: AndroidManifest.xml not found"
+            exit 1
+          fi
+
+          echo "Android V4.1 project verified"
+
+
+      # ==============================
+      # 6. SAFE XML FIX
+      # ==============================
+
+      - name: Validate and fix XML
+        run: |
+          set -e
+
           python3 <<'PY'
           from pathlib import Path
           import re
 
-          root = Path("android-build")
-          xml = root / "app/src/main/res/layout/activity_main.xml"
+          root = Path("android-build/app/src/main/res")
 
-          if not xml.exists():
-              raise SystemExit("activity_main.xml not found")
+          if not root.exists():
+              raise SystemExit("ERROR: Android resource folder not found")
 
-          s = xml.read_text(encoding="utf-8")
+          for xml in root.rglob("*.xml"):
+              text = xml.read_text(encoding="utf-8")
 
-          # Fix unescaped ampersands
-          s = re.sub(
-              r'&(?!amp;|lt;|gt;|quot;|apos;|#)',
-              '&amp;',
-              s
-          )
+              # Fix raw ampersands only.
+              fixed = re.sub(
+                  r'&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9A-Fa-f]+;)',
+                  '&amp;',
+                  text
+              )
 
-          # Add required dimensions to self-closing TextView tags
-          def fix_textview(match):
-              tag = match.group(0)
+              if fixed != text:
+                  xml.write_text(fixed, encoding="utf-8")
+                  print("Fixed:", xml)
 
-              if "android:layout_width=" not in tag:
-                  tag = tag.replace(
-                      "<TextView",
-                      '<TextView android:layout_width="wrap_content"',
-                      1
-                  )
-
-              if "android:layout_height=" not in tag:
-                  tag = tag.replace(
-                      "<TextView",
-                      '<TextView android:layout_height="wrap_content"',
-                      1
-                  )
-
-              return tag
-
-          s = re.sub(
-              r'<TextView\b[^>]*?/>',
-              fix_textview,
-              s,
-              flags=re.S
-          )
-
-          xml.write_text(s, encoding="utf-8")
-
-          gradle = root / "app/build.gradle.kts"
-          g = gradle.read_text(encoding="utf-8")
-
-          if "compileOptions" not in g:
-              pos = g.rfind("}")
-
-              block = '''
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-              '''
-
-              g = g[:pos] + block + g[pos:]
-              gradle.write_text(g, encoding="utf-8")
-
-          print("Android V4.0 source fixed")
+          print("XML check completed")
           PY
 
-      - name: Build debug APK
-        run: |
-          cd android-build
-          gradle assembleDebug --stacktrace
 
-      - name: Collect APK
+      # ==============================
+      # 7. SHOW VERSION
+      # ==============================
+
+      - name: Check V4.1 configuration
         run: |
+          echo "===== APP CONFIG ====="
+
+          grep -n "applicationId" \
+            android-build/app/build.gradle.kts || true
+
+          grep -n "versionCode" \
+            android-build/app/build.gradle.kts || true
+
+          grep -n "versionName" \
+            android-build/app/build.gradle.kts || true
+
+          echo "======================"
+
+
+      # ==============================
+      # 8. BUILD APK
+      # ==============================
+
+      - name: Build DPC Daily Assistant V4.1 APK
+        run: |
+          set -e
+
+          cd android-build
+
+          gradle assembleDebug \
+            --stacktrace \
+            --no-daemon
+
+
+      # ==============================
+      # 9. LOCATE APK
+      # ==============================
+
+      - name: Collect V4.1 APK
+        run: |
+          set -e
+
           mkdir -p apk-output
 
           APK=$(find android-build/app/build/outputs/apk \
-            -name 'app-debug.apk' -print -quit)
+            -type f \
+            -name "app-debug.apk" \
+            -print \
+            -quit)
 
           if [ -z "$APK" ]; then
             echo "ERROR: app-debug.apk not found"
+            echo "Available APK files:"
+            find android-build -type f -name "*.apk" -print || true
             exit 1
           fi
 
-          cp "$APK" apk-output/DPC_Daily_Assistant_V4_0.apk
+          echo "APK found:"
+          echo "$APK"
 
-          echo "APK CREATED:"
-          ls -lh apk-output/DPC_Daily_Assistant_V4_0.apk
+          cp "$APK" \
+            apk-output/DPC_Daily_Assistant_V4_1.apk
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: DPC_Daily_Assistant_V4_0_APK
-          path: apk-output/DPC_Daily_Assistant_V4_0.apk
-          if-no-files-found: error
-          retention-days: 30
+          echo "===== FINAL APK ====="
+          ls -lh \
+            apk-output/DPC_Daily_Assistant_V4_1.apk
+
+
+      # ==============================
+      # 10. APK CHECKSUM
+      # ==============================
+
+      - name: Generate APK SHA256
+        run: |
+          set -e
+
+          cd apk-output
+
+          sha256sum \
+            DPC_Daily_Assistant_V4_1.apk \
+            > DPC_Daily_Assistant_V4_1_SHA256.txt
+
+          cat DPC_Daily_Assistant_V4_1_SHA256.txt
+
+
+      # ==============================
+      # 11. UPLOAD ARTIF
