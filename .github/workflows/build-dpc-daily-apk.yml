@@ -1,10 +1,10 @@
-name: Build DPC Daily Assistant APK
+name: Build DPC Daily Assistant V4.0 APK
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'dpc-daily-android/**'
+      - 'dpc-daily-android/DPC_Daily_Assistant_V4_0_Android_Source.zip'
       - '.github/workflows/build-dpc-daily-apk.yml'
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
       - name: Extract Android source
         run: |
           rm -rf android-build
-          mkdir android-build
+          mkdir -p android-build
           unzip -q dpc-daily-android/DPC_Daily_Assistant_V4_0_Android_Source.zip -d android-build
           ls -la android-build
 
@@ -48,26 +48,38 @@ jobs:
           s = xml.read_text(encoding="utf-8")
 
           # Fix unescaped ampersands
-          s = re.sub(r'&(?!amp;|lt;|gt;|quot;|apos;|#)', '&amp;', s)
+          s = re.sub(
+              r'&(?!amp;|lt;|gt;|quot;|apos;|#)',
+              '&amp;',
+              s
+          )
 
-          # Add required layout dimensions to TextView tags if missing
+          # Add required dimensions to self-closing TextView tags
           def fix_textview(match):
               tag = match.group(0)
+
               if "android:layout_width=" not in tag:
                   tag = tag.replace(
                       "<TextView",
                       '<TextView android:layout_width="wrap_content"',
                       1
                   )
+
               if "android:layout_height=" not in tag:
                   tag = tag.replace(
                       "<TextView",
                       '<TextView android:layout_height="wrap_content"',
                       1
                   )
+
               return tag
 
-          s = re.sub(r'<TextView\b[^>]*?/>', fix_textview, s, flags=re.S)
+          s = re.sub(
+              r'<TextView\b[^>]*?/>',
+              fix_textview,
+              s,
+              flags=re.S
+          )
 
           xml.write_text(s, encoding="utf-8")
 
@@ -76,6 +88,7 @@ jobs:
 
           if "compileOptions" not in g:
               pos = g.rfind("}")
+
               block = '''
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -86,10 +99,11 @@ jobs:
                   jvmTarget = "17"
               }
               '''
+
               g = g[:pos] + block + g[pos:]
               gradle.write_text(g, encoding="utf-8")
 
-          print("Android source fixed")
+          print("Android V4.0 source fixed")
           PY
 
       - name: Build debug APK
@@ -100,13 +114,24 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p apk-output
-          cp android-build/app/build/outputs/apk/debug/app-debug.apk \
-             apk-output/DPC_Daily_Assistant_V3.apk
-          ls -lh apk-output/DPC_Daily_Assistant_V4.apk
+
+          APK=$(find android-build/app/build/outputs/apk \
+            -name 'app-debug.apk' -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: app-debug.apk not found"
+            exit 1
+          fi
+
+          cp "$APK" apk-output/DPC_Daily_Assistant_V4_0.apk
+
+          echo "APK CREATED:"
+          ls -lh apk-output/DPC_Daily_Assistant_V4_0.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DPC_Daily_Assistant_V4_APK
-          path: apk-output/DPC_Daily_Assistant_V3.apk
+          name: DPC_Daily_Assistant_V4_0_APK
+          path: apk-output/DPC_Daily_Assistant_V4_0.apk
+          if-no-files-found: error
           retention-days: 30
