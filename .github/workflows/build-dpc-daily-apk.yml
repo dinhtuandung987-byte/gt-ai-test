@@ -20,36 +20,33 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.7"
+          gradle-version: "8.9"
 
       - name: Find and extract V5.3 source
         shell: bash
         run: |
           set -e
 
-          echo "=== Files in repository ==="
-          find . -maxdepth 2 -type f | sort
+          SOURCE="dpc-daily-android/DPC_Daily_Assistant_V5_3_Android_Source.zip"
 
-          SOURCE=$(find . -type f \
-            \( -iname "*V5_3*.zip" -o -iname "*V5.3*.zip" \) \
-            | head -n 1)
+          echo "=== CHECK V5.3 SOURCE ==="
+          echo "$SOURCE"
 
-          if [ -z "$SOURCE" ]; then
-            echo "ERROR: Không tìm thấy ZIP source V5.3"
+          if [ ! -f "$SOURCE" ]; then
+            echo "ERROR: Không tìm thấy source V5.3:"
+            echo "$SOURCE"
             exit 1
           fi
-
-          echo "Found source: $SOURCE"
 
           rm -rf android-build
           mkdir -p android-build
 
           unzip -q "$SOURCE" -d android-build
 
-          echo "=== Extracted ==="
+          echo "=== SOURCE EXTRACTED ==="
           find android-build -maxdepth 3 -type f | sort | head -100
 
       - name: Find Android project
@@ -62,47 +59,166 @@ jobs:
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERROR: Không tìm thấy settings.gradle/settings.gradle.kts"
+            echo "ERROR: Không tìm thấy settings.gradle hoặc settings.gradle.kts"
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Android project: $PROJECT_DIR"
+          echo "Android project found:"
+          echo "$PROJECT_DIR"
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Build Debug APK
-        shell: bash
-        run: |
-          set -e
-          cd "$PROJECT_DIR"
-
-          echo "Building V5.3..."
-          gradle --no-daemon assembleDebug
-
-      - name: Locate APK
+      - name: Verify Android project
         shell: bash
         run: |
           set -e
 
-          APK=$(find "$PROJECT_DIR" -type f \
-            -path "*/build/outputs/apk/debug/*.apk" \
-            | head -n 1)
+          echo "=== PROJECT ==="
+          echo "$PROJECT_DIR"
 
-          if [ -z "$APK" ]; then
-            echo "ERROR: Build xong nhưng không tìm thấy APK"
-            find "$PROJECT_DIR" -type f -name "*.apk"
+          if [ ! -d "$PROJECT_DIR/app" ]; then
+            echo "ERROR: Không tìm thấy thư mục app"
             exit 1
           fi
 
-          echo "APK found: $APK"
+          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERROR: Không tìm thấy app build.gradle"
+            exit 1
+          fi
+
+          echo "Android project OK"
+
+      - name: Show V5.3 configuration
+        shell: bash
+        run: |
+          echo "===== DPC DAILY V5.3 CONFIG ====="
+
+          if [ -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            grep -n "applicationId" \
+              "$PROJECT_DIR/app/build.gradle.kts" || true
+
+            grep -n "versionCode" \
+              "$PROJECT_DIR/app/build.gradle.kts" || true
+
+            grep -n "versionName" \
+              "$PROJECT_DIR/app/build.gradle.kts" || true
+          fi
+
+          echo "================================="
+
+      - name: Validate Android XML
+        shell: bash
+        run: |
+          set -e
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          import os
+
+          project = Path(os.environ["PROJECT_DIR"])
+          root = project / "app" / "src" / "main" / "res"
+
+          if not root.exists():
+              raise SystemExit("ERROR: Android res folder not found")
+
+          for xml in root.rglob("*.xml"):
+              text = xml.read_text(encoding="utf-8")
+
+              fixed = re.sub(
+                  r'&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9A-Fa-f]+;)',
+                  '&amp;',
+                  text
+              )
+
+              if fixed != text:
+                  xml.write_text(
+                      fixed,
+                      encoding="utf-8"
+                  )
+                  print("Fixed XML:", xml)
+
+          print("XML validation completed")
+          PY
+
+      - name: Build DPC Daily Assistant V5.3 APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "================================="
+          echo "BUILDING DPC DAILY ASSISTANT V5.3"
+          echo "Gradle:"
+          gradle --version
+          echo "================================="
+
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            assembleDebug
+
+      - name: Locate V5.3 APK
+        shell: bash
+        run: |
+          set -e
+
+          echo "Searching APK..."
+
+          APK=$(find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            -print \
+            -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: Build hoàn tất nhưng không tìm thấy APK"
+
+            echo "Available APK files:"
+            find "$PROJECT_DIR" \
+              -type f \
+              -name "*.apk" \
+              -print || true
+
+            exit 1
+          fi
+
+          echo "APK FOUND:"
+          echo "$APK"
 
           mkdir -p apk-output
-          cp "$APK" apk-output/DPC_Daily_Assistant_V5_3.apk
 
-      - name: Upload V5.3 APK
+          cp "$APK" \
+            apk-output/DPC_Daily_Assistant_V5_3.apk
+
+          echo "===== FINAL APK ====="
+          ls -lh \
+            apk-output/DPC_Daily_Assistant_V5_3.apk
+
+      - name: Generate V5.3 SHA256
+        shell: bash
+        run: |
+          set -e
+
+          cd apk-output
+
+          sha256sum \
+            DPC_Daily_Assistant_V5_3.apk \
+            > DPC_Daily_Assistant_V5_3_SHA256.txt
+
+          echo "===== SHA256 ====="
+          cat DPC_Daily_Assistant_V5_3_SHA256.txt
+
+      - name: Upload DPC Daily Assistant V5.3 APK
         uses: actions/upload-artifact@v4
         with:
           name: DPC-Daily-Assistant-V5.3-APK
-          path: apk-output/DPC_Daily_Assistant_V5_3.apk
+          path: |
+            apk-output/DPC_Daily_Assistant_V5_3.apk
+            apk-output/DPC_Daily_Assistant_V5_3_SHA256.txt
           if-no-files-found: error
+          retention-days: 30
